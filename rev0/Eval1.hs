@@ -3,7 +3,7 @@ module Eval1 (eval) where
 import AST
 
 -- Estados
-type State = [(Variable,Integer)]
+type State = [(Variable,Double)]
 
 -- Estado nulo
 initState :: State
@@ -11,13 +11,13 @@ initState = []
 
 -- Busca el valor de una variabl en un estado
 -- Completar la definicion
-lookfor :: Variable -> State -> Integer
+lookfor :: Variable -> State -> Double
 lookfor var ((x,y):xs)= if var == x then y
                                     else lookfor var xs
 
 -- Cambia el valor de una variable en un estado
 -- Completar la definicion
-update :: Variable -> Integer -> State -> State
+update :: Variable -> Double -> State -> State
 update var valor [] = [(var,valor)]
 update var valor ((x,y):xs) = if var == x then (var,valor):xs
                                           else (x,y): update var valor xs
@@ -41,7 +41,7 @@ evalComm (Cond b c0 c1) s = if (evalBoolExp b s )
 evalComm (Repeat c b) s = evalComm (Seq c (Cond b Skip (Repeat c b))) s
 -- Evalua una expresion entera
 -- Completar definicion
-evalIntExp :: IntExp -> State -> Integer
+evalIntExp :: IntExp -> State -> Double
 evalIntExp (Const valor) estado = valor
 evalIntExp (Var variable) estado = lookfor variable estado
 evalIntExp (UMinus expInt) estado = let valor = evalIntExp expInt estado
@@ -58,7 +58,7 @@ evalIntExp (Times exp1 exp2) estado = let valor1 = evalIntExp exp1 estado
                                           in valor1 * valor2
 evalIntExp (Div exp1 exp2) estado = let valor1 = evalIntExp exp1 estado
                                         valor2 = evalIntExp exp2 estado
-                                        in div valor1 valor2
+                                        in valor1 / valor2
 
 
 -- Evalua una expresion entera
