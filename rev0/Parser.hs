@@ -18,7 +18,28 @@ dsl :: TokenParser u
 dsl = makeTokenParser (emptyDef   { commentStart  = "/*"
                                   , commentEnd    = "*/"
                                   , commentLine   = "//"
-                                  , reservedNames = ["true","false","skip","if","then","else","while","repeat","until","end","declare","conector","eslinga","carga","gancho","grillete","percha","cadena","sintetica","connect","dibujar","null"]
+                                  , reservedNames = ["true",
+                                                     "false",
+                                                     "skip",
+                                                     "if",
+                                                     "then",
+                                                     "else",
+                                                     "while",
+                                                     "repeat",
+                                                     "until",
+                                                     "end",
+                                                     "declare",
+                                                     "conector",
+                                                     "eslinga",
+                                                     "carga",
+                                                     "gancho",
+                                                     "grillete",
+                                                     "percha",
+                                                     "cadena",
+                                                     "sintetica",
+                                                     "connect",
+                                                     "dibujar",
+                                                     "null"]
                                   , reservedOpNames = [  "+"
                                                        , "-"
                                                        , "*"
@@ -29,7 +50,7 @@ dsl = makeTokenParser (emptyDef   { commentStart  = "/*"
                                                        , "|"
                                                        , "="
                                                        , ";"
-                                                       , ":="
+                                                       , "=="
                                                        ]
                                    }
                                  )
@@ -81,9 +102,12 @@ boolexp3 = try (do i <- doubleexp
         <|> parens dsl boolexp
 
 compopp :: Parser (DoubleExp -> DoubleExp -> BoolExp)
-compopp = try (reservedOp dsl "=" >> return Eq)
-      <|> try (reservedOp dsl "<" >> return Lt)
-      <|> (reservedOp dsl ">" >> return Gt)
+compopp = try (do reservedOp dsl "==" 
+                  return Eq)
+      <|> try (do reservedOp dsl "<" 
+                  return Lt)
+      <|> (do reservedOp dsl ">" 
+              return Gt)
 
 boolvalue :: Parser BoolExp
 boolvalue = try (do reserved dsl "true"
@@ -116,14 +140,15 @@ comm2 = try (do reserved dsl "skip"
                 reserved dsl "end"
                 return (Repeat body cond))
     <|> try (do str <- identifier dsl
-                reservedOp dsl ":="
+                reservedOp dsl "="
                 e <- doubleexp
                 return (Let str e))
     <|> try (do reserved dsl "connect"
                 char '['
                 c <- camino
                 char ']'
-                char ';'
+                reservedOp dsl ";"
+                spaces
                 d <- dibujar
                 return (Connect c d))
 
@@ -167,28 +192,33 @@ eslinga = try (do str <- identifier dsl
 
 program :: Parser Program
 program = do reserved dsl "declare"
+             spaces
              char '{'
+             spaces
              ds <- decllist
              char '}'
              reservedOp dsl ";"
              as <- many asig
-             reservedOp dsl ";"
              c <- comm
              return (Program ds as c)
 
 decllist :: Parser Decllist
-decllist = sepBy decl (reservedOp dsl ";")
+decllist = do ds <- many decl
+              return ds
 
 decl :: Parser Decl
 decl =
       (do reserved dsl "conector"
           nombre <- identifier dsl
+          reservedOp dsl ";"
           return (DeclConector nombre))
   <|> (do reserved dsl "eslinga"
           nombre <- identifier dsl
+          reservedOp dsl ";"
           return (DeclEslinga nombre))
   <|> (do reserved dsl "carga"
           nombre <- identifier dsl
+          reservedOp dsl ";"
           return (DeclCarga nombre))
 
 asig :: Parser Asig
@@ -231,6 +261,7 @@ tipo = try (do reserved dsl "gancho"
 
 dibujar :: Parser Dibujar
 dibujar = do reserved dsl "dibujar"
+             reservedOp dsl ";"
              return Dibujar
 
 ------------------------------------

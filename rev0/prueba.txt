@@ -1,9 +1,17 @@
-declare {conector puente;eslinga eslinga1;carga carga1};
+declare{
+    conector puente;
+    eslinga eslinga1;
+    carga carga1;
+    };
 
 puente = gancho(10);
 eslinga1 = cadena(5);
 carga1 = sintetica(20);
-;
+x = 10 + 5 * 2;
 
-x := 10 + 5 * 2
+if 5>2 then skip else skip end;
+repeat skip until 5>2 end;
+skip;
 
+connect[[n1,n2],[e1,e2],[n3,n4]];
+dibujar;
