@@ -38,6 +38,7 @@ dsl = makeTokenParser (emptyDef   { commentStart  = "/*"
                                                      "cadena",
                                                      "sintetica",
                                                      "connect",
+                                                     "draw",
                                                      "dibujar",
                                                      "null"]
                                   , reservedOpNames = [  "+"
@@ -116,11 +117,15 @@ boolvalue = try (do reserved dsl "true"
                      return BFalse)
 
 -----------------------------------
---- Parser de coma
+--- Parser de comandos
 -----------------------------------
 comm :: Parser Comm
-comm = chainl1 comm2 (try (do reservedOp dsl ";"
-                              return Seq))
+comm = do c <- comm2
+          cs <- many (try (do reservedOp dsl ";"
+                              c2 <- comm2
+                              return c2))
+          optional (reservedOp dsl ";")
+          return (foldl Seq c cs)
 
 comm2 :: Parser Comm
 comm2 = try (do reserved dsl "skip"
@@ -139,6 +144,10 @@ comm2 = try (do reserved dsl "skip"
                 cond <- boolexp
                 reserved dsl "end"
                 return (Repeat body cond))
+    <|> try (do reserved dsl "draw"
+                return Draw)
+    <|> try (do reserved dsl "dibujar"
+                return Draw)
     <|> try (do str <- identifier dsl
                 reservedOp dsl "="
                 e <- doubleexp
@@ -147,24 +156,21 @@ comm2 = try (do reserved dsl "skip"
                 char '['
                 c <- camino
                 char ']'
-                reservedOp dsl ";"
-                spaces
-                d <- dibujar
-                return (Connect c d))
+                return (Connect c Dibujar))
 
 camino :: Parser Camino
 camino = try (do nl1 <- nodolist
                  char ','
                  el <- eslingalist
                  char ','
+                 c <- camino
+                 return (CaminoPaso nl1 el c)) 
+      <|>try (do nl1 <- nodolist
+                 char ','
+                 el <- eslingalist
+                 char ','
                  nl2 <- nodolist
                  return (CaminoBase nl1 el nl2))
-      <|> try (do nl1 <- nodolist
-                  char ','
-                  el <- eslingalist
-                  char ','
-                  c <- camino
-                  return (CaminoPaso nl1 el c))
 
 nodolist :: Parser NodoList
 nodolist = do char '['

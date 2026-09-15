@@ -41,6 +41,7 @@ data Tipo = Gancho    DoubleExp
 
 -- <comm> ::= 'connect' '[' <camino> ']' ';' <dibujar>
 data Comm = Connect Camino Dibujar
+          | Draw
           | Skip
           | Let Variable IntExp
           | Seq Comm Comm
