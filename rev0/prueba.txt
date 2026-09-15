@@ -1,17 +1,40 @@
 declare{
-    conector puente;
-    eslinga eslinga1;
-    carga carga1;
-    };
+    carga ca1;
+    carga ca2;
 
-puente = gancho(10);
-eslinga1 = cadena(5);
-carga1 = sintetica(20);
-x = 10 + 5 * 2;
+    conector g1;
+    conector p1;
+    conector p2;
+    conector p3;
+    conector gr1;
+    conector gr2;
 
-if 5>2 then skip else skip end;
-repeat skip until 5>2 end;
-skip;
+    eslinga e1;
+    eslinga e2;
+    eslinga c1;
+    eslinga c2;
+    eslinga c3;
+};
 
-connect[[n1],[e1,e2,e3],[n3,n4,n5],[e4,e5,e6],[n6,n7,n8],[e7,e8,e9],[n9,n10,n11],[e10],[n12]];
+g1 = gancho(1);
+
+e1 = sintetica(5);
+e2 = sintetica(5);
+
+p1 = percha(5);
+p2 = percha(5);
+p3 = percha(5);
+
+c1 = cadena(5);
+c2 = cadena(5);
+c3 = cadena(5);
+
+ca1 = 5;
+ca2 = 5;
+
+gr1 = grillete(5);
+gr2 = grillete(5);
+
+connect[[g1],[e1,null,e2],[p1,p2,p3],[c1,c3,c2],[ca1,gr2,ca2]];
+
 dibujar;
