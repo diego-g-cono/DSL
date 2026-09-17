@@ -3,6 +3,7 @@ declare{
     carga ca2;
 
     conector g1;
+    conector g2;
     conector p1;
     conector p2;
     conector p3;
@@ -16,25 +17,24 @@ declare{
     eslinga c3;
 };
 
-g1 = gancho(1);
 
-e1 = sintetica(5);
-e2 = sintetica(5);
+g1 = gancho(12);
+g2 = gancho(12);
 
-p1 = percha(5);
-p2 = percha(5);
-p3 = percha(5);
+ca1 = 6;
+ca2 = 6;
 
-c1 = cadena(5);
-c2 = cadena(5);
-c3 = cadena(5);
+e1 = sintetica(ca1);
+e2 = sintetica(6);
 
-ca1 = 5;
-ca2 = 5;
+each p1,p2,p3 are percha(6);
 
-gr1 = grillete(5);
-gr2 = grillete(5);
+each c1, c2, c3 are cadena(6);
 
-connect[[g1],[e1,null,e2],[p1,p2,p3],[c1,c3,c2],[ca1,gr2,ca2]];
+gr1 = grillete(6);
+gr2 = grillete(6);
+
+connect[[g1],[e1,null,e2],[p1,p2,p3],[c1,null,c2],[ca1,null,ca2]];
 
 dibujar;
+

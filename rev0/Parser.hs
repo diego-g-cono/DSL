@@ -37,6 +37,8 @@ dsl = makeTokenParser (emptyDef   { commentStart  = "/*"
                                                      "percha",
                                                      "cadena",
                                                      "sintetica",
+                                                     "each",
+                                                     "are",
                                                      "connect",
                                                      "draw",
                                                      "dibujar",
@@ -148,6 +150,11 @@ comm2 = try (do reserved dsl "skip"
                 return Draw)
     <|> try (do reserved dsl "dibujar"
                 return Draw)
+    <|> try (do reserved dsl "each"
+                vars <- sepBy1 (identifier dsl) (do spaces; char ','; spaces)
+                reserved dsl "are"
+                t <- tipo
+                return (Each vars t))
     <|> try (do str <- identifier dsl
                 reservedOp dsl "="
                 e <- doubleexp
@@ -197,16 +204,39 @@ eslinga = try (do str <- identifier dsl
                    return EslingaNull)
 
 program :: Parser Program
-program = do reserved dsl "declare"
-             spaces
-             char '{'
-             spaces
-             ds <- decllist
-             char '}'
-             reservedOp dsl ";"
-             as <- many asig
-             c <- comm
-             return (Program ds as c)
+program = do
+    reserved dsl "declare"
+    symbol dsl "{"
+    ds <- decllist
+    symbol dsl "}"
+    symbol dsl ";"
+    as <- many asigOrEach
+    c <- comm
+    return (Program ds (concat as) c)
+
+asigOrEach :: Parser [Asig]
+asigOrEach =
+    try asigSimple
+    <|> asigEach
+
+asigSimple :: Parser [Asig]
+asigSimple = do
+    a <- asig
+    return [a]
+
+asigEach :: Parser [Asig]
+asigEach = do
+    reserved dsl "each"
+    vars <- sepBy1 (identifier dsl) (symbol dsl ",")
+    reserved dsl "are"
+    t <- tipo
+    symbol dsl ";"
+    return (makeAsig vars t)
+
+makeAsig :: [Variable] -> Tipo -> [Asig]
+makeAsig vars t = map make vars
+    where
+        make v = Asig v t
 
 decllist :: Parser Decllist
 decllist = do ds <- many decl

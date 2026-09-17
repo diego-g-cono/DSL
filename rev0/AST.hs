@@ -44,6 +44,7 @@ data Comm = Connect Camino Dibujar
           | Draw
           | Skip
           | Let Variable IntExp
+          | Each [Variable] Tipo
           | Seq Comm Comm
           | Cond BoolExp Comm Comm
           | Repeat Comm BoolExp

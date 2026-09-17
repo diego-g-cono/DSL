@@ -2,17 +2,21 @@
 \GraphInit[vstyle=Normal]
 \SetGraphUnit{4}
 \Vertex[x=0,y=4]{g1}
+\node[anchor=south] at (g1.north) {12tn};
 \Vertex[x=-4,y=2]{p1}
+\node[anchor=east]  at (p1.west)  {6tn};
 \Vertex[x=0,y=2]{p2}
+\node[anchor=south] at (p2.north) {6tn};
 \Vertex[x=4,y=2]{p3}
+\node[anchor=west]  at (p3.east)  {6tn};
 \Vertex[x=-4,y=0]{ca1}
-\Vertex[x=0,y=0]{gr2}
+\node[anchor=east]  at (ca1.west)  {6tn};
 \Vertex[x=4,y=0]{ca2}
-\Edge[label={e1}]({g1})({p1})
-\Edge[label={e2}]({g1})({p3})
-\Edge({p1})({p2})
-\Edge({p2})({p3})
-\Edge[label={c1}]({p1})({ca1})
-\Edge[label={c3}]({p2})({gr2})
-\Edge[label={c2}]({p3})({ca2})
+\node[anchor=west]  at (ca2.east)  {6tn};
+\draw (g1) -- node[below left]{e1 6tn} (p1);
+\draw (g1) -- node[below right]{e2 6tn} (p3);
+\draw (p1) -- (p2);
+\draw (p2) -- (p3);
+\draw (p1) -- node[left]{c1 6tn} (ca1);
+\draw (p3) -- node[left]{c2 6tn} (ca2);
 \end{tikzpicture}

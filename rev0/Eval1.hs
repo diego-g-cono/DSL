@@ -38,7 +38,8 @@ evalProgram program =
     Right (Program _ asigs comm) ->
       let st0 = foldl evalAsig initState asigs
           typeMap = map (\(Asig var tipo) -> (var, tipo)) asigs
-      in evalComm comm st0 typeMap
+          (finalState, finalTypeMap) = evalCommWithTypeMap comm st0 typeMap
+      in finalState
 
 evalAsig :: State -> Asig -> State
 evalAsig st (Asig var tipo) = update var (evalTipo tipo st) st
@@ -47,13 +48,15 @@ validateProgram :: Program -> Either String Program
 validateProgram p@(Program decls asigs comm) =
   let declNames = map declName decls
       declMap = map (\d -> (declName d, d)) decls
-      typeMap = map (\(Asig var tipo) -> (var, tipo)) asigs
+      state = foldl evalAsig initState asigs
+      typeMap = map (\(Asig var tipo) -> (var, resolveTipo state tipo)) asigs
       duplicateNames = findDuplicates declNames
   in if not (null duplicateNames)
        then Left ("Hay declaraciones duplicadas: " ++ intercalate ", " duplicateNames)
        else do
+         mapM_ (validateAsigType declMap) asigs
          mapM_ (validateVariable declNames) (map asigVar asigs)
-         validateComm declNames declMap typeMap comm
+         _ <- validateCommWithTypeMap declNames declMap typeMap comm
          return p
 
 findDuplicates :: [String] -> [String]
@@ -77,33 +80,91 @@ validateVariable declNames var =
     then Right ()
     else Left ("La variable '" ++ var ++ "' debe declararse antes de usarse.")
 
+resolveTipo :: State -> Tipo -> Tipo
+resolveTipo st (Gancho e) = Gancho (resolveDoubleExp st e)
+resolveTipo st (Grillete e) = Grillete (resolveDoubleExp st e)
+resolveTipo st (Percha e) = Percha (resolveDoubleExp st e)
+resolveTipo st (Cadena e) = Cadena (resolveDoubleExp st e)
+resolveTipo st (Sintetica e) = Sintetica (resolveDoubleExp st e)
+resolveTipo st (TipoExpr e) = TipoExpr (resolveDoubleExp st e)
+resolveTipo _ TipoVacio = TipoVacio
+
+resolveDoubleExp :: State -> DoubleExp -> DoubleExp
+resolveDoubleExp _ (Const valor) = Const valor
+resolveDoubleExp st (Var variable) = Const (lookfor variable st)
+resolveDoubleExp st (UMinus e) = UMinus (resolveDoubleExp st e)
+resolveDoubleExp st (Plus e1 e2) = Plus (resolveDoubleExp st e1) (resolveDoubleExp st e2)
+resolveDoubleExp st (Minus e1 e2) = Minus (resolveDoubleExp st e1) (resolveDoubleExp st e2)
+resolveDoubleExp st (Times e1 e2) = Times (resolveDoubleExp st e1) (resolveDoubleExp st e2)
+resolveDoubleExp st (Div e1 e2) = Div (resolveDoubleExp st e1) (resolveDoubleExp st e2)
+
+validateAsigType :: [(String, Decl)] -> Asig -> Either String ()
+validateAsigType declMap (Asig var tipo) =
+  case lookup var declMap of
+    Just (DeclEslinga _) ->
+      case tipo of
+        Cadena _ -> Right ()
+        Sintetica _ -> Right ()
+        _ -> Left ("La variable '" ++ var ++ "' está declarada como eslinga y solo puede tener tipo cadena o sintetica.")
+    Just (DeclConector _) ->
+      case tipo of
+        Gancho _ -> Right ()
+        Grillete _ -> Right ()
+        Percha _ -> Right ()
+        _ -> Left ("La variable '" ++ var ++ "' está declarada como conector y solo puede tener tipo gancho, grillete o percha.")
+    Just (DeclCarga _) -> Right ()
+    Nothing -> Left ("La variable '" ++ var ++ "' debe declararse antes de usarse.")
+
 validateComm :: [String] -> [(String, Decl)] -> TypeMap -> Comm -> Either String ()
-validateComm declNames declMap _ Skip = Right ()
-validateComm declNames declMap _ Draw = Right ()
-validateComm declNames declMap _ (Let var exp) = do
+validateComm declNames declMap typeMap comm = do
+  _ <- validateCommWithTypeMap declNames declMap typeMap comm
+  return ()
+
+validateCommWithTypeMap :: [String] -> [(String, Decl)] -> TypeMap -> Comm -> Either String TypeMap
+validateCommWithTypeMap declNames declMap typeMap Skip = Right typeMap
+validateCommWithTypeMap declNames declMap typeMap Draw = Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Let var exp) = do
   validateVariable declNames var
   validateDoubleExp declNames exp
-validateComm declNames declMap typeMap (Seq c1 c2) = do
-  validateComm declNames declMap typeMap c1
-  validateComm declNames declMap typeMap c2
-validateComm declNames declMap typeMap (Cond b c1 c2) = do
+  Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Each vars tipo) = do
+  mapM_ (validateVariable declNames) vars
+  mapM_ (validateAsigType declMap) (map (\var -> Asig var tipo) vars)
+  Right (foldl (\acc var -> updateTypeMap var (resolveTipo (foldl evalAsig initState (map (\v -> Asig v tipo) vars)) tipo) acc) typeMap vars)
+validateCommWithTypeMap declNames declMap typeMap (Seq c1 c2) = do
+  typeMap1 <- validateCommWithTypeMap declNames declMap typeMap c1
+  validateCommWithTypeMap declNames declMap typeMap1 c2
+validateCommWithTypeMap declNames declMap typeMap (Cond b c1 c2) = do
   validateBoolExp declNames b
   validateComm declNames declMap typeMap c1
   validateComm declNames declMap typeMap c2
-validateComm declNames declMap typeMap (Repeat c b) = do
+  Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Repeat c b) = do
   validateComm declNames declMap typeMap c
   validateBoolExp declNames b
-validateComm declNames declMap typeMap (Connect camino _) = validateCamino declMap typeMap camino
+  Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Connect camino _) = do
+  validateCamino declMap typeMap camino
+  Right typeMap
+
+updateTypeMap :: Variable -> Tipo -> TypeMap -> TypeMap
+updateTypeMap var tipo [] = [(var, tipo)]
+updateTypeMap var tipo ((x, y):xs)
+  | var == x  = (var, tipo):xs
+  | otherwise = (x, y) : updateTypeMap var tipo xs
 
 validateCamino :: [(String, Decl)] -> TypeMap -> Camino -> Either String ()
 validateCamino declMap typeMap (CaminoBase ns es ms) = do
   validateNodeList declMap ns
   validateNodeConnection declMap typeMap ns es
   validateNodeList declMap ms
+  validateCargaList declMap ms
+  validateLevelCapacity declMap typeMap ns es ms
   validateNodeConnection declMap typeMap ms es
 validateCamino declMap typeMap (CaminoPaso ns es rest) = do
   validateNodeList declMap ns
   validateNodeConnection declMap typeMap ns es
+  validateLevelCapacity declMap typeMap ns es (firstNodes rest)
   validateCamino declMap typeMap rest
 
 validateNodeList :: [(String, Decl)] -> NodoList -> Either String ()
@@ -134,6 +195,81 @@ validateNodeRole declMap _ (NodoId x) =
     Just (DeclEslinga _) -> Left ("La eslinga '" ++ x ++ "' no puede conectarse como nodo.")
     Nothing -> Left ("El nodo '" ++ x ++ "' no está declarado.")
 validateNodeRole _ _ NodoNull = Right ()
+
+validateCargaList :: [(String, Decl)] -> NodoList -> Either String ()
+validateCargaList _ [] = Right ()
+validateCargaList declMap (NodoNull:xs) = validateCargaList declMap xs
+validateCargaList declMap (NodoId x:xs) =
+  case lookup x declMap of
+    Just (DeclCarga _) -> validateCargaList declMap xs
+    Just _ -> Left ("El nodo final '" ++ x ++ "' debe declararse como carga.")
+    Nothing -> Left ("El nodo final '" ++ x ++ "' no está declarado.")
+
+validateLevelCapacity :: [(String, Decl)] -> TypeMap -> NodoList -> EslingaList -> NodoList -> Either String ()
+validateLevelCapacity _ typeMap prev es next = do
+  let prevNames = map showNodo (filter (not . isNullNodo) prev)
+      nextNames = map showNodo (filter (not . isNullNodo) next)
+      realEs = filter (/= EslingaNull) es
+      pairs = buildLevelPairs prevNames nextNames realEs
+  mapM_ (\(src, dst, e) -> do
+          srcVal <- lookupAssignedValue src typeMap
+          dstVal <- lookupAssignedValue dst typeMap
+          eVal <- lookupAssignedValue (showEslinga e) typeMap
+          if eVal >= dstVal
+            then Right ()
+            else Left ("La eslinga '" ++ showEslinga e ++ "' debe tener un valor mayor o igual a la carga '" ++ dst ++ "'.")) pairs
+  mapM_ (\(node, total) -> do
+          nodeVal <- lookupAssignedValue node typeMap
+          if nodeVal >= total
+            then Right ()
+            else Left ("El nodo '" ++ node ++ "' debe soportar al menos " ++ show total ++ " y tiene valor " ++ show nodeVal ++ ".")) (aggregateBySource pairs typeMap)
+
+buildLevelPairs :: [String] -> [String] -> [Eslinga] -> [(String, String, Eslinga)]
+buildLevelPairs prevNames nextNames realEs =
+  map (\(idx, e) ->
+         let srcIdx = nodeIndex idx (length prevNames) (length realEs)
+             dstIdx = nodeIndex idx (length nextNames) (length realEs)
+             src = prevNames !! srcIdx
+             dst = nextNames !! dstIdx
+         in (src, dst, e)) (zip [0 ..] realEs)
+
+aggregateBySource :: [(String, String, Eslinga)] -> TypeMap -> [(String, Double)]
+aggregateBySource pairs typeMap =
+  foldl (\acc (src, _, e) ->
+           let val = lookupAssignedValueOrZero (showEslinga e) typeMap
+           in case lookup src acc of
+                Just total -> map (\(n, t) -> if n == src then (n, t + val) else (n, t)) acc
+                Nothing -> acc ++ [(src, val)]) [] pairs
+
+lookupAssignedValueOrZero :: String -> TypeMap -> Double
+lookupAssignedValueOrZero name typeMap =
+  case lookup name typeMap of
+    Just t -> tipoValor t
+    Nothing -> 0
+
+lookupAssignedValue :: String -> TypeMap -> Either String Double
+lookupAssignedValue name typeMap =
+  case lookup name typeMap of
+    Just t -> Right (tipoValor t)
+    Nothing -> Left ("La variable '" ++ name ++ "' no está asignada.")
+
+tipoValor :: Tipo -> Double
+tipoValor (Gancho e) = evalTipoValue e
+tipoValor (Grillete e) = evalTipoValue e
+tipoValor (Percha e) = evalTipoValue e
+tipoValor (Cadena e) = evalTipoValue e
+tipoValor (Sintetica e) = evalTipoValue e
+tipoValor (TipoExpr e) = evalTipoValue e
+tipoValor TipoVacio = 0
+
+evalTipoValue :: DoubleExp -> Double
+evalTipoValue (Const valor) = valor
+evalTipoValue (Var variable) = 0
+evalTipoValue (UMinus e) = - evalTipoValue e
+evalTipoValue (Plus e1 e2) = evalTipoValue e1 + evalTipoValue e2
+evalTipoValue (Minus e1 e2) = evalTipoValue e1 - evalTipoValue e2
+evalTipoValue (Times e1 e2) = evalTipoValue e1 * evalTipoValue e2
+evalTipoValue (Div e1 e2) = evalTipoValue e1 / evalTipoValue e2
 
 validateEslingaList :: [(String, Decl)] -> EslingaList -> Either String ()
 validateEslingaList _ [] = Right ()
@@ -195,15 +331,27 @@ eval :: Comm -> State
 eval p = evalComm p initState []
 
 evalComm :: Comm -> State -> TypeMap -> State
-evalComm Skip s _ = s
-evalComm Draw s _ = s
-evalComm (Let var expInt) s _ = update var (evalIntExp expInt s) s
-evalComm (Seq Skip c1) s typeMap = evalComm c1 s typeMap
-evalComm (Seq c0 c1) s typeMap = evalComm (Seq Skip c1) (evalComm c0 s typeMap) typeMap
-evalComm (Cond b c0 c1) s typeMap = if evalBoolExp b s then evalComm c0 s typeMap else evalComm c1 s typeMap
-evalComm (Repeat c b) s typeMap = if evalBoolExp b s then evalComm (Seq c (Repeat c b)) s typeMap else s
-evalComm (Connect camino _) s typeMap = unsafePerformIO (do writeFile "izaje.tex" (renderGraphWithTypes camino typeMap)
-                                                            return s)
+evalComm comm s typeMap = fst (evalCommWithTypeMap comm s typeMap)
+
+evalCommWithTypeMap :: Comm -> State -> TypeMap -> (State, TypeMap)
+evalCommWithTypeMap Skip s typeMap = (s, typeMap)
+evalCommWithTypeMap Draw s typeMap = (s, typeMap)
+evalCommWithTypeMap (Let var expInt) s typeMap = (update var (evalIntExp expInt s) s, typeMap)
+evalCommWithTypeMap (Each vars tipo) s typeMap =
+  let newState = foldl (\acc var -> update var (evalTipo tipo acc) acc) s vars
+      newTypeMap = foldl (\acc var -> updateTypeMap var (resolveTipo s tipo) acc) typeMap vars
+  in (newState, newTypeMap)
+evalCommWithTypeMap (Seq Skip c1) s typeMap = evalCommWithTypeMap c1 s typeMap
+evalCommWithTypeMap (Seq c0 c1) s typeMap =
+  let (s1, typeMap1) = evalCommWithTypeMap c0 s typeMap
+  in evalCommWithTypeMap c1 s1 typeMap1
+evalCommWithTypeMap (Cond b c0 c1) s typeMap =
+  if evalBoolExp b s then evalCommWithTypeMap c0 s typeMap else evalCommWithTypeMap c1 s typeMap
+evalCommWithTypeMap (Repeat c b) s typeMap =
+  if evalBoolExp b s then evalCommWithTypeMap (Seq c (Repeat c b)) s typeMap else (s, typeMap)
+evalCommWithTypeMap (Connect camino _) s typeMap =
+  let resolvedTypeMap = map (\(var, tipo) -> (var, resolveTipo s tipo)) typeMap
+  in unsafePerformIO (writeFile "izaje.tex" (renderGraphWithTypes camino resolvedTypeMap) >> return (s, typeMap))
 
 -- Expresiones aritmeticas
 
@@ -242,8 +390,8 @@ renderGraphWithTypes camino typeMap =
       allNodes = nub (map showNodo (filter (not . isNullNodo) (concat lvls)))
       -- map node name to coordinates
       coords = assignCoords lvls numLvls spacingX gapY
-      vertexLines = map (renderVertex coords) allNodes
-      edgeLines = map renderEdge (edgesInCaminoWithTypes camino typeMap)
+      vertexLines = concatMap (renderVertex coords typeMap) allNodes
+      edgeLines = map (renderEdge coords) (edgesInCaminoWithTypes camino typeMap)
   in unlines ( [ "\\begin{tikzpicture}",
                  "\\GraphInit[vstyle=Normal]",
                  "\\SetGraphUnit{4}" ]
@@ -282,11 +430,26 @@ assignCoords lvls numLvls spacingX gapY = concat $ zipWith assignLevel [0..] lvl
           visiblePairs = [ (showNodo n, (x, y)) | (n, x) <- zip nodes xs, not (isNullNodo n) ]
       in visiblePairs
 
-renderVertex :: [(String, (Double, Double))] -> String -> String
-renderVertex coords name =
+renderVertex :: [(String, (Double, Double))] -> TypeMap -> String -> [String]
+renderVertex coords typeMap name =
   case lookup name coords of
-    Just (x, y) -> "\\Vertex[x=" ++ formatCoord x ++ ",y=" ++ formatCoord y ++ "]{" ++ name ++ "}"
-    Nothing -> "\\Vertex{" ++ name ++ "}"
+    Just (x, y) ->
+      let posOpts = "x=" ++ formatCoord x ++ ",y=" ++ formatCoord y
+          vertexLine = "\\Vertex[" ++ posOpts ++ "]{" ++ name ++ "}"
+          labelLines = case lookup name typeMap of
+            Just t ->
+              let cap = formatCapacity t ++ "tn"
+                  -- choose anchor according to x coordinate
+                  anchorLine | x < -1e-6 = "\\node[anchor=east]  at (" ++ name ++ ".west)  {" ++ cap ++ "};"
+                             | x > 1e-6  = "\\node[anchor=west]  at (" ++ name ++ ".east)  {" ++ cap ++ "};"
+                             | otherwise = "\\node[anchor=south] at (" ++ name ++ ".north) {" ++ cap ++ "};"
+              in [anchorLine]
+            Nothing -> []
+      in vertexLine : labelLines
+    Nothing -> ["\\Vertex{" ++ name ++ "}"]
+
+formatCapacity :: Tipo -> String
+formatCapacity t = formatCoord (tipoValor t)
 
 formatCoord :: Double -> String
 formatCoord v = if abs (v - fromInteger (round v)) < 1e-6
@@ -303,33 +466,42 @@ edgesInCamino camino = edgesInCaminoWithTypes camino []
 edgesInCaminoWithTypes :: Camino -> TypeMap -> [(String, String, String)]
 edgesInCaminoWithTypes (CaminoPaso ns es rest) typeMap =
   let perchaEdges = if arePerchaNodes ns typeMap then horizontalPerchaByType ns typeMap else []
-      lowerEdges = if isPerchaLevel es then [] else linkNodes ns (firstNodes rest) es
+      lowerEdges = if isPerchaLevel es then [] else linkNodes ns (firstNodes rest) es typeMap
   in perchaEdges ++ lowerEdges ++ edgesInCaminoWithTypes rest typeMap
 
 edgesInCaminoWithTypes (CaminoBase ns es ms) typeMap =
   let perchaEdges = if arePerchaNodes ns typeMap then horizontalPerchaByType ns typeMap else []
-      lowerEdges = if isPerchaLevel es then [] else linkNodes ns ms es
+      lowerEdges = if isPerchaLevel es then [] else linkNodes ns ms es typeMap
   in perchaEdges ++ lowerEdges
 
 firstNodes :: Camino -> NodoList
 firstNodes (CaminoPaso ns _ _) = ns
 firstNodes (CaminoBase ns _ _) = ns
 
-linkNodes :: NodoList -> NodoList -> EslingaList -> [(String, String, String)]
-linkNodes [] _ _ = []
-linkNodes _ [] _ = []
-linkNodes prev next es =
+linkNodes :: NodoList -> NodoList -> EslingaList -> TypeMap -> [(String, String, String)]
+linkNodes [] _ _ _ = []
+linkNodes _ [] _ _ = []
+linkNodes prev next es typeMap =
   let prevNames = map showNodo (filter (not . isNullNodo) prev)
       nextNames = map showNodo (filter (not . isNullNodo) next)
       realEs = filter (/= EslingaNull) es
   in if null prevNames || null nextNames || null realEs
-       then []
-       else map (\(idx, e) ->
-                    let aIdx = nodeIndex idx (length prevNames) (length realEs)
-                        bIdx = nodeIndex idx (length nextNames) (length realEs)
-                        a = prevNames !! aIdx
-                        b = nextNames !! bIdx
-                    in (a, b, showEslinga e)) (zip [0 ..] realEs)
+     then []
+     else map (\(idx, e) ->
+          let aIdx = nodeIndex idx (length prevNames) (length realEs)
+              bIdx = nodeIndex idx (length nextNames) (length realEs)
+              a = prevNames !! aIdx
+              b = nextNames !! bIdx
+              ename = showEslinga e
+              label = eslingaLabel ename typeMap
+          in (a, b, label)) (zip [0 ..] realEs)
+
+eslingaLabel :: String -> TypeMap -> String
+eslingaLabel "null" _ = ""
+eslingaLabel name typeMap =
+  case lookup name typeMap of
+  Just t -> name ++ " " ++ formatCapacity t ++ "tn"
+  Nothing -> name
 
 nodeIndex :: Int -> Int -> Int -> Int
 nodeIndex idx total len
@@ -356,9 +528,23 @@ horizontalPerchaByType xs typeMap =
     then horizontalPercha xs
     else []
 
-renderEdge :: (String, String, String) -> String
-renderEdge (a, b, "") = "\\Edge({" ++ a ++ "})({" ++ b ++ "})"
-renderEdge (a, b, label) = "\\Edge[label={" ++ label ++ "}]({" ++ a ++ "})({" ++ b ++ "})"
+renderEdge :: [(String, (Double, Double))] -> (String, String, String) -> String
+renderEdge coords (a, b, lbl) =
+  let ma = lookup a coords
+      mb = lookup b coords
+      pos = case (ma, mb) of
+        (Just (ax, ay), Just (bx, by)) ->
+          let dx = bx - ax
+              dy = by - ay
+          in if abs dx < 1e-6
+               then if ay < by then "right" else "left"
+               else if abs dy < 1e-6
+                      then "below"
+                      else if dx > 0 then "below right" else "below left"
+        _ -> "midway"
+  in if null lbl
+       then "\\draw (" ++ a ++ ") -- (" ++ b ++ ");"
+       else "\\draw (" ++ a ++ ") -- node[" ++ pos ++ "]{" ++ lbl ++ "} (" ++ b ++ ");"
 
 isNullNodo :: Nodo -> Bool
 isNullNodo NodoNull = True
