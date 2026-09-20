@@ -5,7 +5,7 @@ import Data.List (nub, intercalate)
 import System.IO (writeFile)
 import System.IO.Unsafe (unsafePerformIO)
 
--- Estado para valores numericos del DSL simple.
+-- Estado para valores numericos
 type State = [(Variable, Double)]
 type TypeMap = [(Variable, Tipo)]
 
@@ -16,9 +16,9 @@ lookupType :: Variable -> TypeMap -> Maybe Tipo
 lookupType = lookup
 
 isPerchaType :: Variable -> TypeMap -> Bool
-isPerchaType var typeMap = case lookupType var typeMap of
-  Just (Percha _) -> True
-  _ -> False
+isPerchaType var typeMap = case lookupType var typeMap 
+                             of Just (Percha _) -> True
+                                _ -> False
 
 lookfor :: Variable -> State -> Double
 lookfor var [] = 0
@@ -32,39 +32,57 @@ update var valor ((x, y):xs) | var == x  = (var, valor):xs
 
 -- Evalua un programa completo con declaraciones, asignaciones y comando.
 evalProgram :: Program -> State
-evalProgram program =
-  case validateProgram program of
-    Left err -> error err
-    Right (Program _ asigs comm) ->
-      let st0 = foldl evalAsig initState asigs
-          typeMap = map (\(Asig var tipo) -> (var, tipo)) asigs
-          (finalState, finalTypeMap) = evalCommWithTypeMap comm st0 typeMap
-      in finalState
+evalProgram program = case validateProgram program 
+                      of Left err -> error err
+                         Right (Program _ asigs comm) -> let st0 = evalAsigs asigs initState
+                                                             typeMap = makeTypeMap asigs
+                                                             (finalState, _) = evalCommWithTypeMap comm st0 typeMap
+                                                          in finalState
+    
+
+evalAsigs :: [Asig] -> State -> State
+evalAsigs [] st = st
+evalAsigs (a:as) st = evalAsigs as (evalAsig st a)
+
+makeTypeMap :: [Asig] -> [(Variable, Tipo)]
+makeTypeMap [] = []
+makeTypeMap (Asig var tipo : as) = (var, tipo) : makeTypeMap as
 
 evalAsig :: State -> Asig -> State
 evalAsig st (Asig var tipo) = update var (evalTipo tipo st) st
 
 validateProgram :: Program -> Either String Program
-validateProgram p@(Program decls asigs comm) =
-  let declNames = map declName decls
-      declMap = map (\d -> (declName d, d)) decls
-      state = foldl evalAsig initState asigs
-      typeMap = map (\(Asig var tipo) -> (var, resolveTipo state tipo)) asigs
-      duplicateNames = findDuplicates declNames
-  in if not (null duplicateNames)
-       then Left ("Hay declaraciones duplicadas: " ++ intercalate ", " duplicateNames)
-       else do
-         mapM_ (validateAsigType declMap) asigs
-         mapM_ (validateVariable declNames) (map asigVar asigs)
-         _ <- validateCommWithTypeMap declNames declMap typeMap comm
-         return p
+validateProgram p@(Program decls asigs comm) = let declNames = map declName decls
+                                                   declMap = map (\d -> (declName d, d)) decls
+                                                   state = evalAsigs asigs initState
+                                                   typeMap = asigTypeMap state asigs
+                                                   duplicateNames = findDuplicates declNames
+                                                in if not (null duplicateNames)
+                                                   then Left ("Hay declaraciones duplicadas: " ++ intercalate ", " duplicateNames)
+                                                   else do validateAsigs declMap asigs
+                                                           validateAsigVars declNames asigs
+                                                           _ <- validateCommWithTypeMap declNames declMap typeMap comm
+                                                           return p
+
+asigTypeMap :: State -> [Asig] -> TypeMap
+asigTypeMap _ [] = []
+asigTypeMap state (Asig var tipo:as) = (var, resolveTipo state tipo) : asigTypeMap state as
+
+validateAsigs :: [(String, Decl)] -> [Asig] -> Either String ()
+validateAsigs _ [] = Right ()
+validateAsigs declMap (a:as) = do validateAsigType declMap a
+                                  validateAsigs declMap as
+
+validateAsigVars :: [String] -> [Asig] -> Either String ()
+validateAsigVars _ [] = Right ()
+validateAsigVars declNames (Asig var _:as) = do validateVariable declNames var
+                                                validateAsigVars declNames as
 
 findDuplicates :: [String] -> [String]
 findDuplicates [] = []
-findDuplicates (x:xs) =
-  if x `elem` xs
-    then x : findDuplicates (filter (/= x) xs)
-    else findDuplicates xs
+findDuplicates (x:xs) = if x `elem` xs
+                        then x : findDuplicates (filter (/= x) xs)
+                        else findDuplicates xs
 
 asigVar :: Asig -> String
 asigVar (Asig var _) = var
@@ -116,36 +134,48 @@ validateAsigType declMap (Asig var tipo) =
     Nothing -> Left ("La variable '" ++ var ++ "' debe declararse antes de usarse.")
 
 validateComm :: [String] -> [(String, Decl)] -> TypeMap -> Comm -> Either String ()
-validateComm declNames declMap typeMap comm = do
-  _ <- validateCommWithTypeMap declNames declMap typeMap comm
-  return ()
+validateComm declNames declMap typeMap comm = do _ <- validateCommWithTypeMap declNames declMap typeMap comm
+                                                 return ()
 
 validateCommWithTypeMap :: [String] -> [(String, Decl)] -> TypeMap -> Comm -> Either String TypeMap
 validateCommWithTypeMap declNames declMap typeMap Skip = Right typeMap
 validateCommWithTypeMap declNames declMap typeMap Draw = Right typeMap
-validateCommWithTypeMap declNames declMap typeMap (Let var exp) = do
+validateCommWithTypeMap declNames declMap typeMap (Let var exp) = do validateVariable declNames var
+                                                                     validateDoubleExp declNames exp
+                                                                     Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Each vars tipo) = do validateEachVariables declNames vars
+                                                                        validateEachAsigns declMap vars tipo
+                                                                        let eachState = evalAsigs (map (\var -> Asig var tipo) vars) initState
+                                                                            resolvedTipo = resolveTipo eachState tipo
+                                                                        Right (updateEachTypeInValidation vars resolvedTipo typeMap)
+validateCommWithTypeMap declNames declMap typeMap (Seq c1 c2) = do typeMap1 <- validateCommWithTypeMap declNames declMap typeMap c1
+                                                                   validateCommWithTypeMap declNames declMap typeMap1 c2
+validateCommWithTypeMap declNames declMap typeMap (Cond b c1 c2) = do validateBoolExp declNames b
+                                                                      validateComm declNames declMap typeMap c1
+                                                                      validateComm declNames declMap typeMap c2
+                                                                      Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Repeat c b) = do validateComm declNames declMap typeMap c
+                                                                    validateBoolExp declNames b
+                                                                    Right typeMap
+validateCommWithTypeMap declNames declMap typeMap (Connect camino _) = do validateCamino declMap typeMap camino
+                                                                          Right typeMap
+
+validateEachVariables :: [String] -> [Variable] -> Either String ()
+validateEachVariables _ [] = Right ()
+validateEachVariables declNames (var:vars) = do
   validateVariable declNames var
-  validateDoubleExp declNames exp
-  Right typeMap
-validateCommWithTypeMap declNames declMap typeMap (Each vars tipo) = do
-  mapM_ (validateVariable declNames) vars
-  mapM_ (validateAsigType declMap) (map (\var -> Asig var tipo) vars)
-  Right (foldl (\acc var -> updateTypeMap var (resolveTipo (foldl evalAsig initState (map (\v -> Asig v tipo) vars)) tipo) acc) typeMap vars)
-validateCommWithTypeMap declNames declMap typeMap (Seq c1 c2) = do
-  typeMap1 <- validateCommWithTypeMap declNames declMap typeMap c1
-  validateCommWithTypeMap declNames declMap typeMap1 c2
-validateCommWithTypeMap declNames declMap typeMap (Cond b c1 c2) = do
-  validateBoolExp declNames b
-  validateComm declNames declMap typeMap c1
-  validateComm declNames declMap typeMap c2
-  Right typeMap
-validateCommWithTypeMap declNames declMap typeMap (Repeat c b) = do
-  validateComm declNames declMap typeMap c
-  validateBoolExp declNames b
-  Right typeMap
-validateCommWithTypeMap declNames declMap typeMap (Connect camino _) = do
-  validateCamino declMap typeMap camino
-  Right typeMap
+  validateEachVariables declNames vars
+
+validateEachAsigns :: [(String, Decl)] -> [Variable] -> Tipo -> Either String ()
+validateEachAsigns _ [] _ = Right ()
+validateEachAsigns declMap (var:vars) tipo = do
+  validateAsigType declMap (Asig var tipo)
+  validateEachAsigns declMap vars tipo
+
+updateEachTypeInValidation :: [Variable] -> Tipo -> TypeMap -> TypeMap
+updateEachTypeInValidation [] _ typeMap = typeMap
+updateEachTypeInValidation (var:vars) tipo typeMap =
+  updateEachTypeInValidation vars tipo (updateTypeMap var tipo typeMap)
 
 updateTypeMap :: Variable -> Tipo -> TypeMap -> TypeMap
 updateTypeMap var tipo [] = [(var, tipo)]
@@ -180,12 +210,16 @@ validateNodeList declMap (NodoNull:xs) = validateNodeList declMap xs
 validateNodeConnection :: [(String, Decl)] -> TypeMap -> NodoList -> EslingaList -> Either String ()
 validateNodeConnection _ _ _ [] = Right ()
 validateNodeConnection declMap typeMap nodes es
-  | isPerchaLevel es = do
-      mapM_ (validateNodeRole declMap typeMap) nodes
-      return ()
+  | isPerchaLevel es = validateNodeRoles declMap typeMap nodes
   | otherwise = do
       validateEslingaList declMap es
-      mapM_ (validateNodeRole declMap typeMap) nodes
+      validateNodeRoles declMap typeMap nodes
+
+validateNodeRoles :: [(String, Decl)] -> TypeMap -> NodoList -> Either String ()
+validateNodeRoles _ _ [] = Right ()
+validateNodeRoles declMap typeMap (node:nodes) = do
+  validateNodeRole declMap typeMap node
+  validateNodeRoles declMap typeMap nodes
 
 validateNodeRole :: [(String, Decl)] -> TypeMap -> Nodo -> Either String ()
 validateNodeRole declMap _ (NodoId x) =
@@ -211,18 +245,26 @@ validateLevelCapacity _ typeMap prev es next = do
       nextNames = map showNodo (filter (not . isNullNodo) next)
       realEs = filter (/= EslingaNull) es
       pairs = buildLevelPairs prevNames nextNames realEs
-  mapM_ (\(src, dst, e) -> do
-          srcVal <- lookupAssignedValue src typeMap
-          dstVal <- lookupAssignedValue dst typeMap
-          eVal <- lookupAssignedValue (showEslinga e) typeMap
-          if eVal >= dstVal
-            then Right ()
-            else Left ("La eslinga '" ++ showEslinga e ++ "' debe tener un valor mayor o igual a la carga '" ++ dst ++ "'.")) pairs
-  mapM_ (\(node, total) -> do
-          nodeVal <- lookupAssignedValue node typeMap
-          if nodeVal >= total
-            then Right ()
-            else Left ("El nodo '" ++ node ++ "' debe soportar al menos " ++ show total ++ " y tiene valor " ++ show nodeVal ++ ".")) (aggregateBySource pairs typeMap)
+  validateLevelPairs pairs typeMap
+  validateSourceTotals (aggregateBySource pairs typeMap) typeMap
+
+validateLevelPairs :: [(String, String, Eslinga)] -> TypeMap -> Either String ()
+validateLevelPairs [] _ = Right ()
+validateLevelPairs ((src, dst, e):pairs) typeMap = do
+  srcVal <- lookupAssignedValue src typeMap
+  dstVal <- lookupAssignedValue dst typeMap
+  eVal <- lookupAssignedValue (showEslinga e) typeMap
+  if eVal >= dstVal
+    then validateLevelPairs pairs typeMap
+    else Left ("La eslinga '" ++ showEslinga e ++ "' debe tener un valor mayor o igual a la carga '" ++ dst ++ "'.")
+
+validateSourceTotals :: [(String, Double)] -> TypeMap -> Either String ()
+validateSourceTotals [] _ = Right ()
+validateSourceTotals ((node, total):rest) typeMap = do
+  nodeVal <- lookupAssignedValue node typeMap
+  if nodeVal >= total
+    then validateSourceTotals rest typeMap
+    else Left ("El nodo '" ++ node ++ "' debe soportar al menos " ++ show total ++ " y tiene valor " ++ show nodeVal ++ ".")
 
 buildLevelPairs :: [String] -> [String] -> [Eslinga] -> [(String, String, Eslinga)]
 buildLevelPairs prevNames nextNames realEs =
@@ -234,12 +276,17 @@ buildLevelPairs prevNames nextNames realEs =
          in (src, dst, e)) (zip [0 ..] realEs)
 
 aggregateBySource :: [(String, String, Eslinga)] -> TypeMap -> [(String, Double)]
-aggregateBySource pairs typeMap =
-  foldl (\acc (src, _, e) ->
-           let val = lookupAssignedValueOrZero (showEslinga e) typeMap
-           in case lookup src acc of
-                Just total -> map (\(n, t) -> if n == src then (n, t + val) else (n, t)) acc
-                Nothing -> acc ++ [(src, val)]) [] pairs
+aggregateBySource [] _ = []
+aggregateBySource ((src, _, e):rest) typeMap =
+  let val = lookupAssignedValueOrZero (showEslinga e) typeMap
+      acc = aggregateBySource rest typeMap
+  in addSourceTotal src val acc
+
+addSourceTotal :: String -> Double -> [(String, Double)] -> [(String, Double)]
+addSourceTotal src val [] = [(src, val)]
+addSourceTotal src val ((name, total):rest)
+  | src == name = (name, total + val) : rest
+  | otherwise = (name, total) : addSourceTotal src val rest
 
 lookupAssignedValueOrZero :: String -> TypeMap -> Double
 lookupAssignedValueOrZero name typeMap =
@@ -283,36 +330,27 @@ validateEslingaList declMap (EslingaNull:xs) = validateEslingaList declMap xs
 validateDoubleExp :: [String] -> DoubleExp -> Either String ()
 validateDoubleExp declNames (Var variable) = validateVariable declNames variable
 validateDoubleExp declNames (UMinus e) = validateDoubleExp declNames e
-validateDoubleExp declNames (Plus e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
-validateDoubleExp declNames (Minus e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
-validateDoubleExp declNames (Times e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
-validateDoubleExp declNames (Div e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
+validateDoubleExp declNames (Plus e1 e2) = do validateDoubleExp declNames e1
+                                              validateDoubleExp declNames e2
+validateDoubleExp declNames (Minus e1 e2) = do validateDoubleExp declNames e1
+                                               validateDoubleExp declNames e2
+validateDoubleExp declNames (Times e1 e2) = do validateDoubleExp declNames e1
+                                               validateDoubleExp declNames e2
+validateDoubleExp declNames (Div e1 e2) = do validateDoubleExp declNames e1
+                                             validateDoubleExp declNames e2
 validateDoubleExp _ _ = Right ()
 
 validateBoolExp :: [String] -> BoolExp -> Either String ()
-validateBoolExp declNames (Eq e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
-validateBoolExp declNames (Lt e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
-validateBoolExp declNames (Gt e1 e2) = do
-  validateDoubleExp declNames e1
-  validateDoubleExp declNames e2
-validateBoolExp declNames (And b1 b2) = do
-  validateBoolExp declNames b1
-  validateBoolExp declNames b2
-validateBoolExp declNames (Or b1 b2) = do
-  validateBoolExp declNames b1
-  validateBoolExp declNames b2
+validateBoolExp declNames (Eq e1 e2) = do validateDoubleExp declNames e1
+                                          validateDoubleExp declNames e2
+validateBoolExp declNames (Lt e1 e2) = do validateDoubleExp declNames e1
+                                          validateDoubleExp declNames e2
+validateBoolExp declNames (Gt e1 e2) = do validateDoubleExp declNames e1
+                                          validateDoubleExp declNames e2
+validateBoolExp declNames (And b1 b2) = do validateBoolExp declNames b1
+                                           validateBoolExp declNames b2
+validateBoolExp declNames (Or b1 b2) = do validateBoolExp declNames b1
+                                          validateBoolExp declNames b2
 validateBoolExp declNames (Not b) = validateBoolExp declNames b
 validateBoolExp _ _ = Right ()
 
@@ -337,21 +375,24 @@ evalCommWithTypeMap :: Comm -> State -> TypeMap -> (State, TypeMap)
 evalCommWithTypeMap Skip s typeMap = (s, typeMap)
 evalCommWithTypeMap Draw s typeMap = (s, typeMap)
 evalCommWithTypeMap (Let var expInt) s typeMap = (update var (evalIntExp expInt s) s, typeMap)
-evalCommWithTypeMap (Each vars tipo) s typeMap =
-  let newState = foldl (\acc var -> update var (evalTipo tipo acc) acc) s vars
-      newTypeMap = foldl (\acc var -> updateTypeMap var (resolveTipo s tipo) acc) typeMap vars
-  in (newState, newTypeMap)
+evalCommWithTypeMap (Each vars tipo) s typeMap = let newState = evalEach vars tipo s
+                                                     newTypeMap = updateEachType vars tipo s typeMap
+                                                 in (newState, newTypeMap)
 evalCommWithTypeMap (Seq Skip c1) s typeMap = evalCommWithTypeMap c1 s typeMap
-evalCommWithTypeMap (Seq c0 c1) s typeMap =
-  let (s1, typeMap1) = evalCommWithTypeMap c0 s typeMap
-  in evalCommWithTypeMap c1 s1 typeMap1
-evalCommWithTypeMap (Cond b c0 c1) s typeMap =
-  if evalBoolExp b s then evalCommWithTypeMap c0 s typeMap else evalCommWithTypeMap c1 s typeMap
-evalCommWithTypeMap (Repeat c b) s typeMap =
-  if evalBoolExp b s then evalCommWithTypeMap (Seq c (Repeat c b)) s typeMap else (s, typeMap)
-evalCommWithTypeMap (Connect camino _) s typeMap =
-  let resolvedTypeMap = map (\(var, tipo) -> (var, resolveTipo s tipo)) typeMap
-  in unsafePerformIO (writeFile "izaje.tex" (renderGraphWithTypes camino resolvedTypeMap) >> return (s, typeMap))
+evalCommWithTypeMap (Seq c0 c1) s typeMap = let (s1, typeMap1) = evalCommWithTypeMap c0 s typeMap
+                                             in evalCommWithTypeMap c1 s1 typeMap1
+evalCommWithTypeMap (Cond b c0 c1) s typeMap = if evalBoolExp b s then evalCommWithTypeMap c0 s typeMap else evalCommWithTypeMap c1 s typeMap
+evalCommWithTypeMap (Repeat c b) s typeMap = if evalBoolExp b s then evalCommWithTypeMap (Seq c (Repeat c b)) s typeMap else (s, typeMap)
+evalCommWithTypeMap (Connect camino _) s typeMap = let resolvedTypeMap = map (\(var, tipo) -> (var, resolveTipo s tipo)) typeMap
+                                                    in unsafePerformIO (writeFile "izaje.tex" (renderGraphWithTypes camino resolvedTypeMap) >> return (s, typeMap))
+
+evalEach :: [Variable] -> Tipo -> State -> State
+evalEach [] tipo s = s
+evalEach (var:vars) tipo s = evalEach vars tipo (update var (evalTipo tipo s) s)
+
+updateEachType :: [Variable] -> Tipo -> State -> [(Variable, Tipo)] -> [(Variable, Tipo)]
+updateEachType [] _ _ typeMap = typeMap
+updateEachType (var:vars) tipo s typeMap = updateEachType vars tipo s (updateTypeMap var (resolveTipo s tipo) typeMap)
 
 -- Expresiones aritmeticas
 
