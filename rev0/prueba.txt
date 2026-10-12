@@ -34,7 +34,7 @@ each c1, c2, c3 are cadena(6);
 gr1 = grillete(6);
 gr2 = grillete(6);
 
-connect[[g1],[e1,null,e2],[p1,p2,p3],[c1,null,c2],[ca1,null,ca2]];
+connect[[g1],[e1,null,e2],[p1,p2,p3],[c1,null,c2],[gr1,null,gr2],[ca1,null,ca2]];
 
 dibujar;
 

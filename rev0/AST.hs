@@ -57,8 +57,13 @@ data Dibujar = Dibujar deriving (Show, Eq)
 --            | <nodolist> ',' <eslingalist> ',' <camino>
 data Camino = CaminoBase  NodoList EslingaList NodoList
             | CaminoPaso  NodoList EslingaList Camino
+            | CaminoFinal CaminoIntermedio CargaList
               deriving (Show, Eq)
 
+data CaminoIntermedio = NodoEslinga NodoList EslingaList
+                      | EslingaNodo EslingaList NodoList
+                        deriving (Show, Eq)
+                        
 -- <nodolist> ::= '[' <nodos> ']'
 -- <nodos> ::= <nodo> | <nodos> ',' <nodos>
 type NodoList = [Nodo]
@@ -76,6 +81,12 @@ type EslingaList = [Eslinga]
 data Eslinga = EslingaId   Id
              | EslingaNull
                deriving (Show, Eq)
+
+type CargaList = [Carga]
+
+data Carga = CargaId Id
+           | CargaNull
+             deriving (Show, Eq)
 
 -- Expresiones Booleanas
 data BoolExp = BTrue

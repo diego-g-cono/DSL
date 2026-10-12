@@ -166,18 +166,30 @@ comm2 = try (do reserved dsl "skip"
                 return (Connect c Dibujar))
 
 camino :: Parser Camino
-camino = try (do nl1 <- nodolist
-                 char ','
-                 el <- eslingalist
-                 char ','
-                 c <- camino
-                 return (CaminoPaso nl1 el c)) 
-      <|>try (do nl1 <- nodolist
-                 char ','
-                 el <- eslingalist
-                 char ','
-                 nl2 <- nodolist
-                 return (CaminoBase nl1 el nl2))
+camino = try (do
+             nl1 <- nodolist
+             char ','
+             el <- eslingalist
+             char ','
+             c <- camino
+             return (CaminoPaso nl1 el c))
+      <|> try (do
+             nl1 <- nodolist
+             char ','
+             el <- eslingalist
+             char ','
+             nl2 <- nodolist
+             return (CaminoBase nl1 el nl2))
+      <|> try (do
+             nl <- nodolist
+             char ','
+             cl <- cargalist
+             return (CaminoFinal (NodoEslinga nl []) cl))
+      <|> try (do
+             ci <- caminoIntermedio
+             char ','
+             cl <- cargalist
+             return (CaminoFinal ci cl))
 
 nodolist :: Parser NodoList
 nodolist = do char '['
@@ -202,6 +214,28 @@ eslinga = try (do str <- identifier dsl
                   return (EslingaId str))
        <|> try (do reserved dsl "null"
                    return EslingaNull)
+
+cargalist :: Parser CargaList
+cargalist = do char '['
+               cs <- sepBy carga (char ',')
+               char ']'
+               return cs
+
+carga :: Parser Carga
+carga = try (do str <- identifier dsl
+                return (CargaId str))
+      <|> try (do reserved dsl "null"
+                  return CargaNull)
+
+caminoIntermedio :: Parser CaminoIntermedio
+caminoIntermedio = try (do nl <- nodolist
+                           char ','
+                           el <- eslingalist
+                           return (NodoEslinga nl el))
+                 <|> try (do el <- eslingalist
+                             char ','
+                             nl <- nodolist
+                             return (EslingaNodo el nl))
 
 program :: Parser Program
 program = do
