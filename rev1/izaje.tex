@@ -1,0 +1,45 @@
+\documentclass[a4paper,12pt]{article}
+
+% Codificación y fuentes
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% Gráficos
+\usepackage{tikz}
+\usepackage{tkz-graph}
+
+\begin{document}
+
+\begin{tikzpicture}
+    \GraphInit[vstyle=Normal]
+    \SetGraphUnit{4}
+    \Vertex[x=0,y=3]{g1}
+    \Vertex[x=-2.5,y=1.5]{p1}
+    \Vertex[x=-2.5,y=0]{gr1}
+    \Vertex[x=-3.75,y=-1.5]{p4}
+    \Vertex[x=-3.75,y=-3]{ca1}
+    \Vertex[x=-1.25,y=-1.5]{p5}
+    \Vertex[x=-1.25,y=-3]{ca4}
+    \Vertex[x=0,y=1.5]{p2}
+    \Vertex[x=0,y=0]{gr2}
+    \Vertex[x=0,y=-1.5]{ca2}
+    \Vertex[x=2.5,y=1.5]{p3}
+    \Vertex[x=2.5,y=0]{gr3}
+    \Vertex[x=2.5,y=-1.5]{ca3}
+    \draw (g1) -- node[below left]{e1} (p1);
+    \draw (p1) -- node[below left]{c1} (gr1);
+    \draw (gr1) -- node[below left]{c3} (p4);
+    \draw (p4) -- node[below left]{c7} (ca1);
+    \draw (gr1) -- node[below left]{c8} (p5);
+    \draw (p5) -- node[below left]{c9} (ca4);
+    \draw (p2) -- node[below left]{c2} (gr2);
+    \draw (gr2) -- node[below left]{c4} (ca2);
+    \draw (g1) -- node[below left]{e2} (p3);
+    \draw (p3) -- node[below left]{c5} (gr3);
+    \draw (gr3) -- node[below left]{c6} (ca3);
+    \draw (p1) -- (p2);
+    \draw (p2) -- (p3);
+    \draw (p4) -- (p5);
+\end{tikzpicture}
+
+\end{document}
