@@ -219,6 +219,23 @@ validateConnect :: [String] -> [(String, Decl)] -> TypeMap -> Variable -> [Rama]
 validateConnect declNames declMap typeMap g ramas = do
   validateVariable declNames g
   validateRamas declMap declNames typeMap ramas
+  validatePerchaLevelConsistency typeMap ramas
+
+validatePerchaLevelConsistency :: TypeMap -> [Rama] -> Either String ()
+validatePerchaLevelConsistency typeMap ramas =
+  mapM_ (validateLevelWithPercha typeMap) (filter (not . null) (nodeLevelsFrom ramas))
+
+validateLevelWithPercha :: TypeMap -> [Variable] -> Either String ()
+validateLevelWithPercha typeMap vars =
+  let uniqVars = nub vars
+      perchaNodes = filter (isPerchaVar typeMap) uniqVars
+      mixedConnectorNodes = filter (\v -> case lookupType v typeMap of
+                                            Just (Gancho _) -> True
+                                            Just (Grillete _) -> True
+                                            _ -> False) uniqVars
+  in if not (null perchaNodes) && not (null mixedConnectorNodes)
+       then Left "En un nivel donde hay conectores de tipo percha, no puede haber conectores de otro tipo."
+       else Right ()
 
 validateRama :: [(String, Decl)] -> [String] -> TypeMap -> Rama -> Either String ()
 validateRama declMap declNames typeMap (Rc a b) = do
@@ -334,10 +351,11 @@ renderGraph = renderGraphWithTypeMap []
 
 renderGraphWithTypeMap :: TypeMap -> Comm -> String
 renderGraphWithTypeMap typeMap (Connect g ramas) =
-  let edges = collectEdges g ramas ++ collectSameLevelPerchaEdges typeMap ramas
+  let rawEdges = collectEdges g ramas ++ collectSameLevelPerchaEdges typeMap ramas
+      edges = map (relabelEdgeLabel typeMap) rawEdges
       nodes = nub (g : concatMap nodeVarsFromRama ramas)
       positions = treeLayout nodes g ramas
-      nodeLines = map renderVertex positions
+      nodeLines = concatMap (renderVertex typeMap) positions
       edgeLines = map renderEdge edges
   in unlines (["\\documentclass[a4paper,12pt]{article}",
               "",
@@ -371,8 +389,60 @@ renderGraphWithTypeMap _ _ = unlines ["\\documentclass[a4paper,12pt]{article}",
                                     "\\end{tikzpicture}",
                                     "\\end{document}"]
 
-renderVertex :: (Variable, (Double, Double)) -> String
-renderVertex (v, (x, y)) = "    \\Vertex[x=" ++ formatCoord x ++ ",y=" ++ formatCoord y ++ "]{" ++ v ++ "}"
+renderVertex :: TypeMap -> (Variable, (Double, Double)) -> [String]
+renderVertex typeMap (v, (x, y)) =
+  let baseVertex = "    \\Vertex[style={scale=0.7},x=" ++ formatCoord x ++ ",y=" ++ formatCoord y ++ "]{" ++ v ++ "}"
+      valueLabel = nodeValueLabel typeMap v
+  in if null valueLabel
+       then [baseVertex]
+       else [baseVertex,
+             "    \\node[font=\\scriptsize, align=center] at (" ++ formatCoord x ++ "," ++ formatCoord (y - 0.45) ++ ") {" ++ valueLabel ++ "};"]
+
+nodeValueLabel :: TypeMap -> Variable -> String
+nodeValueLabel typeMap var =
+  case lookupType var typeMap of
+    Just (Gancho e) -> formatValueInTypeMap typeMap e ++ " tn"
+    Just (Grillete e) -> formatValueInTypeMap typeMap e ++ " tn"
+    Just (Percha e) -> formatValueInTypeMap typeMap e ++ " tn"
+    Just (Cadena e) -> formatValueInTypeMap typeMap e ++ " tn"
+    Just (Sintetica e) -> formatValueInTypeMap typeMap e ++ " tn"
+    Just (TipoExpr e) -> formatValueInTypeMap typeMap e ++ " tn"
+    _ -> ""
+
+relabelEdgeLabel :: TypeMap -> (Variable, Variable, Maybe Variable) -> (Variable, Variable, Maybe String)
+relabelEdgeLabel typeMap (a, b, label) = (a, b, fmap (edgeLabel typeMap) label)
+
+edgeLabel :: TypeMap -> Variable -> String
+edgeLabel typeMap var =
+  case lookupType var typeMap of
+    Just (Gancho e) -> "gancho " ++ formatValueInTypeMap typeMap e ++ "tn"
+    Just (Grillete e) -> "grillete " ++ formatValueInTypeMap typeMap e ++ "tn"
+    Just (Percha e) -> "percha " ++ formatValueInTypeMap typeMap e ++ "tn"
+    Just (Cadena e) -> "cad " ++ formatValueInTypeMap typeMap e ++ "tn"
+    Just (Sintetica e) -> "sint " ++ formatValueInTypeMap typeMap e ++ "tn"
+    Just (TipoExpr e) -> "carga " ++ formatValueInTypeMap typeMap e ++ "tn"
+    _ -> var
+
+formatValueInTypeMap :: TypeMap -> DoubleExp -> String
+formatValueInTypeMap typeMap (Const value) = formatCoord value
+formatValueInTypeMap typeMap (Var variable) =
+  case lookupType variable typeMap of
+    Just (TipoExpr e) -> formatValueInTypeMap typeMap e
+    Just (Gancho e) -> formatValueInTypeMap typeMap e
+    Just (Grillete e) -> formatValueInTypeMap typeMap e
+    Just (Percha e) -> formatValueInTypeMap typeMap e
+    Just (Cadena e) -> formatValueInTypeMap typeMap e
+    Just (Sintetica e) -> formatValueInTypeMap typeMap e
+    _ -> "0"
+formatValueInTypeMap typeMap (UMinus e) = "-" ++ formatValueInTypeMap typeMap e
+formatValueInTypeMap typeMap (Plus e1 e2) = formatValueInTypeMap typeMap e1 ++ "+" ++ formatValueInTypeMap typeMap e2
+formatValueInTypeMap typeMap (Minus e1 e2) = formatValueInTypeMap typeMap e1 ++ "-" ++ formatValueInTypeMap typeMap e2
+formatValueInTypeMap typeMap (Times e1 e2) = formatValueInTypeMap typeMap e1 ++ "*" ++ formatValueInTypeMap typeMap e2
+formatValueInTypeMap typeMap (Div e1 e2) = formatValueInTypeMap typeMap e1 ++ "/" ++ formatValueInTypeMap typeMap e2
+formatValueInTypeMap _ _ = "0"
+
+formatValue :: DoubleExp -> String
+formatValue e = formatValueInTypeMap [] e
 
 formatCoord :: Double -> String
 formatCoord value =
@@ -453,27 +523,60 @@ isPerchaVar typeMap v = case lookupType v typeMap of
 treeLayout :: [Variable] -> Variable -> [Rama] -> [(Variable, (Double, Double))]
 treeLayout _ root ramas =
   let rootPos = (root, (0, 3))
-      childPositions = layoutChildren 0 1.5 ramas
+      leafPositions = leafXByVar ramas
+      childPositions = layoutChildren leafPositions 2.0 ramas
   in dedupePositions (rootPos : childPositions)
 
-layoutChildren :: Double -> Double -> [Rama] -> [(Variable, (Double, Double))]
+leftToRightLeaves :: [Rama] -> [Variable]
+leftToRightLeaves = concatMap branchLeaves
+
+branchLeaves :: Rama -> [Variable]
+branchLeaves (R _ _ rs) = concatMap branchLeaves rs
+branchLeaves (Rc _ b) = [b]
+
+leafXByVar :: [Rama] -> [(Variable, Double)]
+leafXByVar ramas =
+  let leaves = leftToRightLeaves ramas
+      totalLeaves = length leaves
+      spacing = if totalLeaves <= 1 then 0 else 3.0
+      offsets = [fromIntegral i * spacing - ((fromIntegral (totalLeaves - 1)) / 2) * spacing | i <- [0 .. totalLeaves - 1]]
+  in zip leaves offsets
+
+branchVariable :: Rama -> Variable
+branchVariable (R _ p _) = p
+branchVariable (Rc _ b) = b
+
+branchChildren :: Rama -> [Rama]
+branchChildren (R _ _ rs) = rs
+branchChildren (Rc _ _) = []
+
+subtreeLeafBindings :: [(Variable, Double)] -> Rama -> [(Variable, Double)]
+subtreeLeafBindings leafPositions (Rc _ b) =
+  case lookup b leafPositions of
+    Just x  -> [(b, x)]
+    Nothing -> []
+subtreeLeafBindings leafPositions (R _ _ rs) = concatMap (subtreeLeafBindings leafPositions) rs
+
+nodeCenterX :: [(Variable, Double)] -> Rama -> Double
+nodeCenterX leafPositions rama =
+  let xs = map snd (subtreeLeafBindings leafPositions rama)
+  in if null xs then 0 else sum xs / fromIntegral (length xs)
+
+layoutChildren :: [(Variable, Double)] -> Double -> [Rama] -> [(Variable, (Double, Double))]
 layoutChildren _ _ [] = []
-layoutChildren baseX baseY ramas =
-  let n = length ramas
-      spacing = if n <= 1 then 0 else 2.5
-      xs = [baseX + fromIntegral i * spacing - ((fromIntegral (n - 1)) / 2) * spacing | i <- [0 .. n - 1]]
-  in concat (zipWith (\branch x -> layoutBranch x baseY branch) ramas xs)
+layoutChildren leafPositions baseY ramas =
+  concatMap (layoutBranch leafPositions baseY) ramas
 
-layoutBranch :: Double -> Double -> Rama -> [(Variable, (Double, Double))]
-layoutBranch x y (R _ p rs) =
-  let current = (p, (x, y))
-      descendants = layoutChildren x (y - 1.5) rs
+layoutBranch :: [(Variable, Double)] -> Double -> Rama -> [(Variable, (Double, Double))]
+layoutBranch leafPositions y rama =
+  let nodeX = nodeCenterX leafPositions rama
+      current = (branchVariable rama, (nodeX, y))
+      descendants = concatMap (layoutBranch leafPositions (y - 2.0)) (branchChildren rama)
   in current : descendants
-layoutBranch x y (Rc _ b) = [(b, (x, y))]
 
-renderEdge :: (Variable, Variable, Maybe Variable) -> String
+renderEdge :: (Variable, Variable, Maybe String) -> String
 renderEdge (a, b, Nothing) = "    \\draw (" ++ a ++ ") -- (" ++ b ++ ");"
-renderEdge (a, b, Just label) = "    \\draw (" ++ a ++ ") -- node[below left]{" ++ label ++ "} (" ++ b ++ ");"
+renderEdge (a, b, Just label) = "    \\draw (" ++ a ++ ") -- node[midway, sloped, above, font=\\scriptsize]{" ++ label ++ "} (" ++ b ++ ");"
 
 dedupePositions :: [(Variable, (Double, Double))] -> [(Variable, (Double, Double))]
 dedupePositions = foldr addUniquePosition []

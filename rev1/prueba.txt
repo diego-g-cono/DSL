@@ -3,6 +3,7 @@ declare{
     carga ca2;
     carga ca3;
     carga ca4;
+    carga ca5;
 
     conector g1;
     conector p1;
@@ -10,6 +11,7 @@ declare{
     conector p3;
     conector p4;
     conector p5;
+    conector p6;
     conector gr1;
     conector gr2;
     conector gr3;
@@ -26,6 +28,7 @@ declare{
     eslinga c7;
     eslinga c8;
     eslinga c9;
+    eslinga c10;
 };
 
 
@@ -35,6 +38,7 @@ ca1 = 6;
 ca2 = 6;
 ca3 = 6;
 ca4 = 6;
+ca5 = 6;
 
 e1 = sintetica(ca1);
 e2 = sintetica(6);
@@ -43,11 +47,11 @@ gr1 = grillete(6);
 gr2 = grillete(6);
 gr3 = grillete(6);
 
-each p1,p2,p3,p4,p5 are percha(6);
+each p1,p2,p3,p4,p5,p6 are percha(6);
 
-each c1, c2, c3, c4, c5, c6, c7, c8, c9 are cadena(6);
+each c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 are cadena(6);
 
-connect g1(e1 p1(c1 gr1(c3 p4(c7 ca1),c8 p5(c9 ca4))),null p2(c2 gr2(c4 ca2)),e2 p3(c5 gr3(c6 ca3)));
+connect g1(e1 p1(c1 gr1(c3 p4(c7 ca1),null p6(c10 ca5),c8 p5(c9 ca4))),null p2(c2 gr2(c4 ca2)),e2 p3(c5 gr3(c6 ca3)));
 
 draw;
 

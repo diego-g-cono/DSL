@@ -1,9 +1,11 @@
 # Fdb version 4
-["pdflatex"] 1794081138.61392 "/home/diego/diego/programacionProfesional/tpFinal/rev1/izaje.tex" "izaje.pdf" "izaje" 1794081138.80632 0
+["pdflatex"] 1794235448.97821 "/home/diego/diego/programacionProfesional/tpFinal/rev1/izaje.tex" "izaje.pdf" "izaje" 1794235449.19122 0
   "/etc/texmf/web2c/texmf.cnf" 1794078934.76152 475 c0e671620eb5563b2130f56340a5fde8 ""
+  "/home/diego/.texlive2025/texmf-var/fonts/pk/ljfour/jknappen/ec/ecrm0800.600pk" 1794229777.0126 19056 f77d946dd96525f24858720d07c7f6b0 ""
   "/home/diego/.texlive2025/texmf-var/fonts/pk/ljfour/jknappen/ec/ecrm1200.600pk" 1794078997.57679 28416 e5630e9f172b7174480d3e52b00bba25 ""
-  "/home/diego/diego/programacionProfesional/tpFinal/rev1/izaje.tex" 1794081133.1005 1254 a3443fe9148681a92fc40992d3b7d650 ""
+  "/home/diego/diego/programacionProfesional/tpFinal/rev1/izaje.tex" 1794235448.83322 2969 dd2fa705e8be76cf590acb2c9ef84e6b ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecrm0800.tfm" 1136768653 3584 49064b465390a8e316a3c8417a050403 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecrm1200.tfm" 1136768653 3584 f80ddd985bd00e29e9a6047ebd9d4781 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmr12.tfm" 1136768653 1288 655e228510b4c2a1abe905c368440826 ""
   "/usr/share/texlive/texmf-dist/tex/context/base/mkii/supp-pdf.mkii" 1461363279 71627 94eb9990bed73c364d7f53f960cc8c5b ""
@@ -96,8 +98,8 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1769369718 41603 27f93b3067076450172040dcd57ca8b3 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1794078938 128227 ed67923a37f7748d267799454bc1f95b ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1794078950 2236308 ccddafd97717c488ae8f08b51164976e ""
-  "izaje.aux" 1794081138.78833 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
-  "izaje.tex" 1794081133.1005 1254 a3443fe9148681a92fc40992d3b7d650 ""
+  "izaje.aux" 1794235449.17261 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "izaje.tex" 1794235448.83322 2969 dd2fa705e8be76cf590acb2c9ef84e6b ""
   (generated)
   "izaje.aux"
   "izaje.log"
